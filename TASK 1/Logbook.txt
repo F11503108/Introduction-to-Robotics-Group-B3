@@ -1,1 +1,2 @@
-
+PickPlaceDEMOLastest3 es la version anterior
+PickPlaceDEMOLastest3 es la ultima version que se probo en el laboratorio (el vacuum generator no funciono y no pudimos probar)
