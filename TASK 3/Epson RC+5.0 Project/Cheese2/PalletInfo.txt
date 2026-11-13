@@ -1,0 +1,50 @@
+ENVT0100,LM:2026/11/12 11:40:47:051,DS:0000000618,CS:13642,MA:2C-F0-5D-B1-A3-92,EI:           
+System {
+	sProjectGUID="097907e5-ba53-4cae-afdb-2fe7430d6977"
+}
+Robot01 {
+	Pallet01 {
+		nDefined=1
+		nVisible=0
+		nidx1=1
+		nidx2=2
+		nidx3=3
+		nidx4=-1
+		nRow=8
+		nColumn=8
+		nOutside=0
+		Pose01 {
+			rX=12.5
+			rY=12.5
+			rZ=0
+			rU=0
+			rV=0
+			rW=0
+			rR=0
+			rS=0
+			rT=0
+		}
+		Pose02 {
+			rX=12.5
+			rY=187.5
+			rZ=0
+			rU=0
+			rV=0
+			rW=0
+			rR=0
+			rS=0
+			rT=0
+		}
+		Pose03 {
+			rX=187.5
+			rY=12.5
+			rZ=0
+			rU=0
+			rV=0
+			rW=0
+			rR=0
+			rS=0
+			rT=0
+		}
+	}
+}

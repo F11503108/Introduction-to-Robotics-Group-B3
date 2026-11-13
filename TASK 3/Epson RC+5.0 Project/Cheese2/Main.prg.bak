@@ -1,0 +1,92 @@
+Function main
+    Motor On
+    Power High
+    Tool 1
+    
+    ' Definicion del tablero de 3 puntos (P1=A1, P2=H1, P3=A8)
+    ' Esto soluciona el Error 7014 provocado por buscar un P4 inexistente
+    Pallet 1, P1, P2, P3, 8, 8
+    LimZ -50
+    
+    String jugadaHumano$, respuestaPython$, turno$
+    String strOrig$, strDest$
+    Integer idxOrig, idxDest
+    
+    Do
+        Print "===================================="
+        Print "Ingresa tu jugada (Ej: e2e4) o 'Q' para salir:"
+        Input jugadaHumano$
+        
+        If UCase$(jugadaHumano$) = "Q" Then
+            Exit Do
+        EndIf
+        
+        ' --- 1. ESCRITURA CON COMANDO DE WINDOWS (Evita Error 3201) ---
+        Call EscribirArchivoIPC("HUMANO", jugadaHumano$)
+        ' --------------------------------------------------------------
+        
+        Print "Procesando... Esperando a Stockfish..."
+        
+        ' --- 2. LECTURA PROTEGIDA ---
+        Do
+            Wait 0.5
+            OnErr GoTo IgnorarBloqueo
+            
+            ' Intentamos leer el archivo. Si falla por choque de procesos, OnErr lo esquiva.
+            Open "C:\Ajedrez\datos.txt" For Input As #10
+            Line Input #10, turno$
+            Line Input #10, respuestaPython$
+            Close #10
+            
+            If turno$ = "ROBOT" Then
+                Exit Do ' Si ya respondio Stockfish, salimos del bucle de espera
+            EndIf
+            
+IgnorarBloqueo:
+            ' Resetea el manejador de errores y asegura cerrar el puerto atascado
+            OnErr GoTo 0
+            Close #10
+        Loop
+        ' ----------------------------
+        
+        ' --- 3. PROCESAR Y MOVER ---
+        Print "Stockfish decide jugar: ", respuestaPython$
+        
+        ' Extraer inicio y fin de la jugada
+        strOrig$ = Mid$(respuestaPython$, 1, 2)
+        strDest$ = Mid$(respuestaPython$, 3, 2)
+        
+        ' Calcular indices del Pallet
+        idxOrig = StrToPallet(strOrig$)
+        idxDest = StrToPallet(strDest$)
+        
+        ' Validacion de seguridad (1 al 64)
+        If idxOrig >= 1 And idxOrig <= 64 And idxDest >= 1 And idxDest <= 64 Then
+            Call MovePiece(idxOrig, idxDest)
+        Else
+            Print "Error de lectura: Coordenadas fuera de rango (", idxOrig, " - ", idxDest, ")."
+        EndIf
+        ' ---------------------------
+    Loop
+    
+    Motor Off
+Fend
+
+
+' --- FUNCION AUXILIAR PARA ESCRIBIR SIN USAR PUERTOS EPSON ---
+Function EscribirArchivoIPC(turnoStr$ As String, jugadaStr$ As String)
+    String comando$
+    
+    ' Usa la consola oculta de Windows (cmd.exe) para crear y escribir el archivo
+    comando$ = "cmd.exe /c echo " + turnoStr$ + " > C:\Ajedrez\datos.txt & echo " + jugadaStr$ + " >> C:\Ajedrez\datos.txt"
+    
+    ' Ejecuta el comando en modo oculto (0) y espera a que termine de escribir (1)
+    Exec comando$, 0, 1
+Fend
+
+
+' (Aquí abajo deja intactas tus funciones StrToPallet y MovePiece)
+' Function StrToPallet(casilla$ As String) As Integer
+' ...
+' Function MovePiece(origen As Integer, destino As Integer)
+' ...

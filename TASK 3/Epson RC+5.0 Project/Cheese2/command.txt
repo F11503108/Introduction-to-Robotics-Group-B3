@@ -1,0 +1,12 @@
+> go xy(0,0,0,0,0,0)/1
+> go xy(0,0,20,0,0,0)/1!!Error: 1501, Command did not complete in time.
+> go xy(0,0,20,0,0,0)/1
+> go xy(0,0,20,0,0,0)/1
+> go xy(0,0,0,0,0,0)/1
+> 
+!!Error: 3100, Syntax error.
+> 
+> 
+> go xy(0,0,0,0,0,0)/1
+> 
+
