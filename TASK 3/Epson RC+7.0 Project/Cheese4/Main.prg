@@ -1,0 +1,247 @@
+' --- VARIABLES GLOBALES ---
+Global Integer CasillaOrigen
+Global Integer CasillaDestino
+Global Integer ContCementerio
+
+' Comando que llega de la HMI (lo recibe la tarea ComHMI)
+Global String CmdRecibido$
+Global Boolean CmdNuevo
+
+' Banderas de control de la tarea ComHMI
+Global Boolean HMIConectada
+Global Boolean SalirComHMI
+
+' Estado que la tarea ComHMI le manda a la HMI cada 0.3 s
+Global Integer EstadoHMI
+Global Integer CemHMI
+Global String JugadaHMI$
+Global String MsgHMI$
+
+Function main
+    String jugadaHumano$, respuestaPython$, cmdHMI$
+    String strOrig$, strDest$
+    Integer idxOrigHum, idxDestHum
+    Integer idxOrig, idxDest
+    Boolean captura
+
+    Motor On
+    Power High
+    Tool 1
+
+    ' Pallet 1 = tablero 8x8 (P1 = A1, P2 = H1, P3 = A8)
+    Pallet 1, P1, P2, P3, 8, 8
+
+    ' Pallet 2 = cementerio (8 huecos x 2 filas = 16 huecos)
+    Pallet 2, P4, P5, P6, 8, 2
+
+    LimZ -50
+    ContCementerio = 0
+
+    HMIConectada = False
+    SalirComHMI = False
+    CmdNuevo = False
+    Call ActualizarHMI(1, "---", ContCementerio, "Conectando...")
+
+    ' Puerto #201 para Python (5050): lo maneja esta tarea
+    SetNet #201, "127.0.0.1", 5050, CRLF, NONE, 0
+    OpenNet #201 As Server
+
+    ' Puerto #202 para la HMI (5051): lo maneja SOLO la tarea ComHMI
+    Xqt ComHMI
+
+    Print "Esperando conexion de Python (5050) y HMI Weintek (5051)..."
+    WaitNet #201
+    Print "Python conectado!"
+
+    Do
+        Wait 0.2
+    Loop Until HMIConectada = True
+    Print "HMI Weintek conectada!"
+
+    Do
+        Call ActualizarHMI(1, "---", ContCementerio, "Tu turno: toca Origen y Destino")
+        Print "===================================="
+        Print "Esperando jugada desde HMI..."
+
+        ' Esperar comando desde la HMI (lo recibe la tarea ComHMI)
+        CmdNuevo = False
+        Do
+            Wait 0.1
+        Loop Until CmdNuevo = True
+        cmdHMI$ = CmdRecibido$
+        CmdNuevo = False
+        Print "HMI envio: [", cmdHMI$, "]"
+
+        ' Verificar boton Salir ("QUIT")
+        If UCase$(cmdHMI$) = "QUIT" Then
+            Call ActualizarHMI(0, "---", ContCementerio, "Partida finalizada.")
+            Exit Do
+        EndIf
+
+        ' Formato esperado desde HMI: "MOVE,05,21" (indices 01..64 a dos digitos)
+        If Mid$(cmdHMI$, 1, 5) = "MOVE," And Len(cmdHMI$) >= 10 Then
+            idxOrigHum = Val(Mid$(cmdHMI$, 6, 2))
+            idxDestHum = Val(Mid$(cmdHMI$, 9, 2))
+
+            If idxOrigHum < 1 Or idxOrigHum > 64 Or idxDestHum < 1 Or idxDestHum > 64 Then
+                Call ActualizarHMI(4, "---", ContCementerio, "Error: selecciona Origen y Destino.")
+                Wait 1.5
+            Else
+                jugadaHumano$ = PalletToStr$(idxOrigHum) + PalletToStr$(idxDestHum)
+
+                ' Enviar jugada a Python
+                Call ActualizarHMI(2, "---", ContCementerio, "Stockfish pensando...")
+                Print "Enviando a Python: ", jugadaHumano$
+                Print #201, jugadaHumano$
+
+                ' Leer respuesta de Python
+                Input #201, respuestaPython$
+                Print "Recibido de Python: [", respuestaPython$, "]"
+
+                If respuestaPython$ = "ERROR" Then
+                    Call ActualizarHMI(4, "---", ContCementerio, "Movimiento ilegal. Intenta de nuevo.")
+                    Wait 1.5
+                Else
+                    If Mid$(respuestaPython$, 1, 1) = "X" Then
+                        captura = True
+                    Else
+                        captura = False
+                    EndIf
+
+                    strOrig$ = Mid$(respuestaPython$, 2, 2)
+                    strDest$ = Mid$(respuestaPython$, 4, 2)
+
+                    idxOrig = StrToPallet(strOrig$)
+                    idxDest = StrToPallet(strDest$)
+
+                    CasillaOrigen = idxOrig
+                    CasillaDestino = idxDest
+
+                    If idxOrig >= 1 And idxOrig <= 64 And idxDest >= 1 And idxDest <= 64 Then
+                        If captura = True Then
+                            Call ActualizarHMI(3, strOrig$ + " -> " + strDest$, ContCementerio, "Captura! Retirando pieza de " + strDest$)
+                            Call DiscardPiece(idxDest)
+                        EndIf
+
+                        Call ActualizarHMI(3, strOrig$ + " -> " + strDest$, ContCementerio, "Robot moviendo: " + strOrig$ + " -> " + strDest$)
+                        Call MovePiece(1, idxOrig, 1, idxDest)
+                    Else
+                        Call ActualizarHMI(4, "---", ContCementerio, "Error de coordenadas recibidas.")
+                        Wait 1.5
+                    EndIf
+                EndIf
+            EndIf
+        EndIf
+    Loop
+
+    ' Dar tiempo a que la HMI reciba el ultimo estado y pedir a ComHMI que termine
+    Wait 1
+    SalirComHMI = True
+    Wait 1
+    CloseNet #201
+    Motor Off
+Fend
+
+' --- GUARDA EL ESTADO PARA LA HMI (lo envia la tarea ComHMI) ---
+Function ActualizarHMI(estado As Integer, jugadaRob$ As String, cem As Integer, msg$ As String)
+    EstadoHMI = estado
+    JugadaHMI$ = jugadaRob$
+    CemHMI = cem
+    MsgHMI$ = msg$
+Fend
+
+' --- TAREA EN SEGUNDO PLANO: UNICA DUENA DEL PUERTO #202 (HMI) ---
+' Abre el puerto, manda el estado cada 0.3 s y lee los comandos de la HMI
+Function ComHMI
+    String trama$, linea$
+    Integer bytesRx, ultimoEstado
+
+    SetNet #202, "127.0.0.1", 5051, CRLF, NONE, 0
+    OpenNet #202 As Server
+    WaitNet #202
+    HMIConectada = True
+    Print "ComHMI: HMI conectada"
+
+    ultimoEstado = 999
+
+    Do While SalirComHMI = False
+        bytesRx = ChkNet(202)
+
+        If bytesRx < 0 Then
+            If bytesRx <> ultimoEstado Then
+                Print "ComHMI: puerto #202 = ", bytesRx
+            EndIf
+        Else
+            ' 1. Mandar el estado actual a la HMI
+            trama$ = Trim$(Str$(EstadoHMI)) + "," + JugadaHMI$ + "," + Trim$(Str$(CemHMI)) + "," + MsgHMI$
+            Print #202, trama$
+
+            ' 2. Leer el comando de la HMI si hay uno y el anterior ya se uso
+            If bytesRx > 0 And CmdNuevo = False Then
+                Line Input #202, linea$
+                CmdRecibido$ = linea$
+                CmdNuevo = True
+            EndIf
+        EndIf
+
+        ultimoEstado = bytesRx
+        Wait 0.3
+    Loop
+
+    CloseNet #202
+Fend
+
+' --- CONVERSION DE INDICE (1..64) A COORDENADA (A1..H8) ---
+Function PalletToStr$(indice As Integer) As String
+    Integer col, fila
+    String letra$, numero$
+
+    col = ((indice - 1) Mod 8) + 1
+    fila = Int((indice - 1) / 8) + 1
+
+    letra$ = Chr$(col + 64)
+    numero$ = Trim$(Str$(fila))
+
+    PalletToStr$ = letra$ + numero$
+Fend
+
+' --- CONVERSION DE COORDENADA (A1..H8) A INDICE (1..64) ---
+Function StrToPallet(coord$ As String) As Integer
+    String letra$, numero$
+    Integer col, fila, indice
+
+    coord$ = UCase$(coord$)
+    letra$ = Mid$(coord$, 1, 1)
+    numero$ = Mid$(coord$, 2, 1)
+
+    col = Asc(letra$) - 64
+    fila = Val(numero$)
+    indice = (fila - 1) * 8 + col
+
+    StrToPallet = indice
+Fend
+
+' --- DESCARTAR UNA PIEZA AL CEMENTERIO ---
+Function DiscardPiece(casilla As Integer)
+    ContCementerio = ContCementerio + 1
+    Print "Descartando pieza de la casilla ", casilla, " al hueco ", ContCementerio, " del cementerio"
+    Call MovePiece(1, casilla, 2, ContCementerio)
+Fend
+
+' --- SUBRUTINA DE MOVIMIENTO ---
+Function MovePiece(palOrig As Integer, casOrig As Integer, palDest As Integer, casDest As Integer)
+    Speed 50
+    Accel 50, 50
+
+    Go Pallet(palOrig, casOrig) -Z(50)
+    Move Pallet(palOrig, casOrig)
+    On 11
+    Wait 0.5
+    Move Pallet(palOrig, casOrig) -Z(50)
+
+    Go Pallet(palDest, casDest) -Z(50)
+    Move Pallet(palDest, casDest)
+    Off 11
+    Wait 0.5
+    Move Pallet(palDest, casDest) -Z(50)
+Fend
